@@ -13,12 +13,24 @@
 进站 Bearer（Logto ID token，壹座同租户）**原样转发**；console 鉴权+`lex-customers`
 组织门禁+credentials owner-only 全由 fd-lex 判定。mint 的明文 key 仅返回一次，服务不落盘。
 
-## 工具面（6 commercial + 2 internal）
+## 工具面（11 commercial + 2 internal）
 
 | 组 | 工具 | 写 |
 |---|---|---|
 | account | `lex_surface_overview` / `lex_me` / `lex_usage` / `lex_billing` / `lex_quota` / `lex_credentials_list` | 全读 |
+| matter | `lex_matter_create` / `lex_matter_list` / `lex_matter_show` / `lex_matter_artifact_add` / `lex_matter_artifact_list` | `_create` / `_artifact_add` 为写 |
 | credentials | `lex_credential_mint` / `lex_credential_revoke` | ✅（internal 分面） |
+
+### 案件脊柱（change lex-matter-spine）
+
+案件是识律链路的唯一归集点：检索命中、类案、要素式文书、合同草稿、评审报告与签署任务
+登记到同一个 matter 上，形成可逐跳复核的证据链。五件工具薄代理 fd-lex 的
+`/api/console/matter`，本服务不判租户、不缓存案件内容、不落日志。
+
+产物契约见 `../fd-lex/contracts/lex-artifact.schema.json`：四项必填
+`producer{line,server,tool,version}` / `refs` / `sha256` / `payload`；检索类
+（`statute_hit` / `case_hit`）另需 `provenance{source,stable_id,as_of}`。
+上游缺字段返回 422 并指名字段，本服务原样转述。
 
 ## 环境
 

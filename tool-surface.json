@@ -6,7 +6,7 @@
   "hosting": [
     "shared-instance"
   ],
-  "description": "识律（lex 线）操作 MCP：线全景导览（self-describing）、账户视图（身份/用量/账单/配额）、检索凭据生命周期（列表/铸造/吊销）。进站 Bearer 原样转发——console 鉴权与 owner-only 全由 fd-lex 判定；mint 明文仅走一次。",
+  "description": "识律（lex 线）操作 MCP 十三工具：线全景导览（self-describing）、账户视图（身份/用量/账单/配额）、检索凭据生命周期（列表/铸造/吊销）、案件脊柱（开案/列举/详情/产物登记/产物列举）。进站 Bearer 原样转发——console 鉴权、租户判定、产物契约校验与 owner-only 全由 fd-lex 判定；mint 明文仅走一次。",
   "skills_eligible_for_packs": [
     "lex-surface-orientation"
   ],
@@ -16,6 +16,67 @@
     "note": "新工具一律 `动词_名词`。既有名词序工具**不改名**——改名会破坏已发布 pack 的引用（一个技能文本里点名的工具名消失即整个套件不可用）；它们在本 清单中登记为 historical，改名的唯一正当路径是组 6.5 的兼容期机制。",
     "historical": "see tool_naming_legacy",
     "prefix_policy": "跨服务同名工具不得靠前缀区分（前缀是服务标识而非工具语义）；同名消解靠描述里写明部署与数据源差异。"
+  },
+  "output_structure": {
+    "declared": [
+      {
+        "tool": "lex_matter_create",
+        "returns": {
+          "id": "string",
+          "title": "string",
+          "cause_code": "string|null",
+          "status": "open|archived",
+          "created_at": "ISO-8601",
+          "updated_at": "ISO-8601"
+        }
+      },
+      {
+        "tool": "lex_matter_list",
+        "returns": "array of the lex_matter_create shape"
+      },
+      {
+        "tool": "lex_matter_show",
+        "returns": {
+          "id": "string",
+          "title": "string",
+          "cause_code": "string|null",
+          "status": "open|archived",
+          "created_at": "ISO-8601",
+          "updated_at": "ISO-8601",
+          "artifacts": "array of artifact shapes"
+        }
+      },
+      {
+        "tool": "lex_matter_artifact_add",
+        "returns": {
+          "id": "string",
+          "matter_id": "string",
+          "kind": "statute_hit|case_hit|doc_draft|elementized|contract_draft|review_report|esign_task",
+          "sha256": "string",
+          "title": "string|null",
+          "producer": "object {line,server,tool,version}",
+          "provenance": "object {source,stable_id,as_of}|null",
+          "payload": "object",
+          "storage_path": "string|null",
+          "created_at": "ISO-8601"
+        }
+      },
+      {
+        "tool": "lex_matter_artifact_list",
+        "returns": "array of the lex_matter_artifact_add shape"
+      }
+    ],
+    "undeclared": [
+      "lex_surface_overview",
+      "lex_me",
+      "lex_usage",
+      "lex_billing",
+      "lex_quota",
+      "lex_credentials_list",
+      "lex_credential_mint",
+      "lex_credential_revoke"
+    ],
+    "note": "案件五件在落地时即声明输出结构（mcp-surface-contract：新增商业工具未声明不得上牌）；账户/凭据八件的形状随上游 console API 变化，沿用既有未声明状态。"
   },
   "tool_groups": [
     {
@@ -33,6 +94,21 @@
         "fd-lex console API /api/console/*（识律控制台同源）"
       ],
       "notes": "只读视图+导览；组织门禁（lex-customers）上游判定。"
+    },
+    {
+      "group": "matter",
+      "level": "commercial",
+      "tools": [
+        "lex_matter_create",
+        "lex_matter_list",
+        "lex_matter_show",
+        "lex_matter_artifact_add",
+        "lex_matter_artifact_list"
+      ],
+      "data_sources": [
+        "fd-lex console API /api/console/matter/*（案件脊柱，change lex-matter-spine）"
+      ],
+      "notes": "案件是链路唯一归集点：产物四项必填（producer/refs/sha256/payload），检索类另需 provenance 三件套；契约校验与租户判定由上游权威执行，本服务不缓存案件内容。两个写操作显式命名为 _create / _artifact_add。"
     },
     {
       "group": "credentials",

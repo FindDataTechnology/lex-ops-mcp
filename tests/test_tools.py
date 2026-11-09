@@ -111,3 +111,138 @@ async def test_missing_credential_guard(monkeypatch):
             await c.call_tool("lex_me", {})
     assert "ID token" in str(ei.value)
     assert fake.calls == []
+
+
+# ------------------------------------------------------------ 案件面五件 ----
+
+ARTIFACT = {
+    "kind": "review_report",
+    "producer": {"line": "lex", "server": "law-bench", "tool": "validation_check", "version": "sha-t"},
+    "refs": [],
+    "sha256": "a" * 64,
+    "payload": {"findings": []},
+}
+
+
+async def test_matter_create_is_write_and_forwards_body(bearer):
+    fake = FakeClient(result={"id": "m1", "status": "open"})
+    mcp = await _mk(fake)
+    async with Client(mcp) as c:
+        await c.call_tool("lex_matter_create", {"title": "甲与乙买卖合同纠纷", "cause_code": "C01"})
+    call = fake.calls[0]
+    assert call["method"] == "POST"
+    assert call["path"] == "/api/console/matter"
+    assert call["json_body"] == {"title": "甲与乙买卖合同纠纷", "cause_code": "C01"}
+    assert call["bearer"] == bearer
+
+
+async def test_matter_create_without_cause_code_omits_field(bearer):
+    fake = FakeClient(result={"id": "m1"})
+    mcp = await _mk(fake)
+    async with Client(mcp) as c:
+        await c.call_tool("lex_matter_create", {"title": "案子"})
+    assert fake.calls[0]["json_body"] == {"title": "案子"}
+
+
+async def test_matter_list_and_show_readonly(bearer):
+    fake = FakeClient(result=[])
+    mcp = await _mk(fake)
+    async with Client(mcp) as c:
+        await c.call_tool("lex_matter_list", {})
+        await c.call_tool("lex_matter_show", {"matter_id": "m1"})
+    assert [c_["method"] for c_ in fake.calls] == ["GET", "GET"]
+    assert [c_["path"] for c_ in fake.calls] == [
+        "/api/console/matter",
+        "/api/console/matter/m1",
+    ]
+
+
+async def test_artifact_add_forwards_contract_verbatim(bearer):
+    fake = FakeClient(result={"id": "a1", "kind": "review_report"})
+    mcp = await _mk(fake)
+    async with Client(mcp) as c:
+        await c.call_tool("lex_matter_artifact_add", {"matter_id": "m1", "artifact": ARTIFACT})
+    call = fake.calls[0]
+    assert call["method"] == "POST"
+    assert call["path"] == "/api/console/matter/m1/artifact"
+    # 原样转发：不补字段、不改写
+    assert call["json_body"] == ARTIFACT
+
+
+async def test_artifact_add_422_contract_error_propagates(bearer):
+    fake = FakeClient(error=LexError("invalid", 422, "producer: 必须是对象"))
+    mcp = await _mk(fake)
+    async with Client(mcp) as c:
+        with pytest.raises(Exception) as ei:
+            await c.call_tool("lex_matter_artifact_add", {"matter_id": "m1", "artifact": {"kind": "x"}})
+    assert "producer" in str(ei.value)
+
+
+async def test_artifact_list_kind_filter(bearer):
+    fake = FakeClient(result=[])
+    mcp = await _mk(fake)
+    async with Client(mcp) as c:
+        await c.call_tool("lex_matter_artifact_list", {"matter_id": "m1"})
+        await c.call_tool("lex_matter_artifact_list", {"matter_id": "m1", "kind": "case_hit"})
+    assert fake.calls[0]["params"] is None
+    assert fake.calls[1]["params"] == {"kind": "case_hit"}
+
+
+async def test_matter_tools_are_stateless(bearer, tmp_path):
+    """案件工具不落文件：调用后工作目录无新增文件。"""
+    import os
+
+    before = set(os.listdir(tmp_path))
+    fake = FakeClient(result={"id": "m1"})
+    mcp = await _mk(fake)
+    async with Client(mcp) as c:
+        await c.call_tool("lex_matter_create", {"title": "案子"})
+        await c.call_tool("lex_matter_list", {})
+    assert set(os.listdir(tmp_path)) == before
+
+
+async def test_matter_tools_require_bearer(monkeypatch):
+    monkeypatch.setattr(tl, "_current_bearer", lambda: None)
+    fake = FakeClient()
+    mcp = await _mk(fake)
+    async with Client(mcp) as c:
+        with pytest.raises(Exception) as ei:
+            await c.call_tool("lex_matter_list", {})
+    assert "ID token" in str(ei.value)
+    assert fake.calls == []
+
+
+async def test_overview_mentions_matter_without_inventing_tool_names(bearer):
+    """导览增补案件面；点到的 lex_* 工具名必须真实在册（不编造）。"""
+    import re
+    from pathlib import Path
+
+    fake = FakeClient()
+    mcp = await _mk(fake)
+    async with Client(mcp) as c:
+        out = await c.call_tool("lex_surface_overview", {})
+        runtime = {t.name for t in await c.list_tools()}
+    text = json.dumps(out.data if hasattr(out, "data") else out, ensure_ascii=False)
+    assert "matter_ops" in text
+    assert "lex_matter_artifact_add" in text
+    mentioned = set(re.findall(r"lex_[a-z_]+", text))
+    assert mentioned <= runtime, f"导览点到不在册工具：{sorted(mentioned - runtime)}"
+
+
+def test_surface_split_counts():
+    """分面口径：商业集恰为 11（overview + 账户三 + credentials_list + 案件五），internal 2。"""
+    from pathlib import Path
+
+    m = json.loads((Path(__file__).resolve().parents[1] / "tool-surface.json").read_text("utf-8"))
+    levels = {}
+    for g in m["tool_groups"]:
+        for t in g["tools"]:
+            levels[t] = g["level"]
+    commercial = {t for t, lv in levels.items() if lv == "commercial"}
+    internal = {t for t, lv in levels.items() if lv == "internal"}
+    assert len(levels) == 13
+    assert len(commercial) == 11
+    assert internal == {"lex_credential_mint", "lex_credential_revoke"}
+    assert {"lex_matter_create", "lex_matter_artifact_add"} <= commercial
+
+
