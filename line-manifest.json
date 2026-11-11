@@ -1,0 +1,37 @@
+{
+  "schema": "line-manifest/v1",
+  "line": "lex",
+  "public_base_url": "https://lex.finddatatech.cloud",
+  "identity": {
+    "issuer": "https://auth.finddatatech.cloud/oidc",
+    "jwks_uri": "https://auth.finddatatech.cloud/oidc/jwks",
+    "jit_policy": "off"
+  },
+  "auth_tracks": [
+    {
+      "kind": "line-native",
+      "name": "lex-pat",
+      "accepts": "line-native-key",
+      "fallback": true
+    },
+    {
+      "kind": "customer-key",
+      "accepts": "ciyuan-sk",
+      "fallback": false,
+      "enforced": false,
+      "migration_task": "converge-line-identity-and-keys#8.2"
+    }
+  ],
+  "scopes": [
+    "line:read",
+    "line:write"
+  ],
+  "billing": {
+    "plane": "ciyuan"
+  },
+  "surfaces": {
+    "mcp": true,
+    "account": true,
+    "admin": false
+  }
+}

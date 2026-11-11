@@ -1,6 +1,10 @@
-"""FastMCP 组装 + ASGI 布线（鉴权门 + /health）。"""
+"""FastMCP 组装 + ASGI 布线（鉴权门 + /health + /.well-known/line-manifest.json）。"""
 
 from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
 
 from . import SERVER_NAME, tools_lex
 from .auth_gate import AuthGate, AuthGateMiddleware
@@ -16,6 +20,47 @@ INSTRUCTIONS = (
 )
 
 _HEALTH_OK = b'{"status":"ok"}'
+
+WELL_KNOWN_PATH = "/.well-known/line-manifest.json"
+LINE_MANIFEST_ENV = "LINE_MANIFEST_PATH"
+#: 清单是运行期契约，改一次要生效但不能让边缘缓存长期撒谎。
+_MANIFEST_CACHE_CONTROL = "public, max-age=300"
+
+
+def manifest_path() -> Path:
+    """仓根 `line-manifest.json`（`LINE_MANIFEST_PATH` 可覆盖）。
+
+    镜像里 `WORKDIR=/app` 且清单随 `COPY line-manifest.json ./` 落到仓根，
+    故默认路径在源码运行与容器内都成立（`__file__` 在 `<root>/lex_ops_mcp/`）。
+    """
+    override = os.environ.get(LINE_MANIFEST_ENV)
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parents[1] / "line-manifest.json"
+
+
+def manifest_response() -> tuple[int, bytes, list[tuple[bytes, bytes]]]:
+    """(status, body, extra_headers) —— 不读网络、不建会话。
+
+    缺失=404（该线未发布清单，属配置事实）；存在但不可解析=500（属缺陷，
+    不能伪装成 404 让调用方以为"本来就没有"）。
+    """
+    json_headers = [(b"content-type", b"application/json; charset=utf-8")]
+    path = manifest_path()
+    try:
+        raw = path.read_bytes()
+    except FileNotFoundError:
+        return 404, b'{"detail":"line-manifest not published"}', json_headers
+    except OSError as exc:
+        return 500, json.dumps(
+            {"detail": f"line-manifest unreadable: {type(exc).__name__}"}).encode(), json_headers
+    try:
+        json.loads(raw)
+    except ValueError:
+        return 500, b'{"detail":"line-manifest is not valid JSON"}', json_headers
+    return 200, raw, json_headers + [
+        (b"cache-control", _MANIFEST_CACHE_CONTROL.encode()),
+    ]
 
 
 def create_server(settings: Settings | None = None) -> "FastMCP":
@@ -43,6 +88,14 @@ def build_app(settings: Settings | None = None):
                 await send({"type": "http.response.start", "status": 200,
                             "headers": [(b"content-type", b"application/json")]})
                 await send({"type": "http.response.body", "body": _HEALTH_OK})
+                return
+            # 线自描述：公开元数据，必须在鉴权门之前应答（与 /health 同理），
+            # 否则平台/客户在未持有本线凭据时连"这条线认哪些钥匙"都读不到。
+            if path == WELL_KNOWN_PATH.rstrip("/"):
+                status, body, headers = manifest_response()
+                await send({"type": "http.response.start", "status": status,
+                            "headers": headers + [(b"content-length", str(len(body)).encode())]})
+                await send({"type": "http.response.body", "body": body})
                 return
         await gate(scope, receive, send)
 
