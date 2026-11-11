@@ -27,16 +27,33 @@ LINE_MANIFEST_ENV = "LINE_MANIFEST_PATH"
 _MANIFEST_CACHE_CONTROL = "public, max-age=300"
 
 
-def manifest_path() -> Path:
-    """仓根 `line-manifest.json`（`LINE_MANIFEST_PATH` 可覆盖）。
+def manifest_candidates() -> list[Path]:
+    """按优先级列出可能放清单的位置（`LINE_MANIFEST_PATH` 一项即封顶）。
 
-    镜像里 `WORKDIR=/app` 且清单随 `COPY line-manifest.json ./` 落到仓根，
-    故默认路径在源码运行与容器内都成立（`__file__` 在 `<root>/lex_ops_mcp/`）。
+    为什么要链而不是一条：**pip 装进去的包与源码树的 `__file__` 不同**。
+    镜像里 pid1 跑的是 console script `/usr/local/bin/lex-ops-mcp`，于是
+    `__file__` 落在 site-packages，`parents[1]` 根本不是仓根——清单就在
+    `/app/line-manifest.json` 却读不到（2026-11-11 真机 404，源码运行验不出来）。
+    所以源码树、CWD（镜像 WORKDIR=/app）、与包同级三处依次找。
     """
     override = os.environ.get(LINE_MANIFEST_ENV)
     if override:
-        return Path(override)
-    return Path(__file__).resolve().parents[1] / "line-manifest.json"
+        return [Path(override)]
+    here = Path(__file__).resolve()
+    return [
+        here.parents[1] / "line-manifest.json",  # 源码树 / 镜像里包与清单同根
+        Path.cwd() / "line-manifest.json",       # pip 装的包：CWD 才是仓根
+        here.parent / "line-manifest.json",      # 清单与包同级（兜底）
+    ]
+
+
+def manifest_path() -> Path:
+    """实际取用的清单路径；都不存在时返回首选位置（让 404 能点名期望路径）。"""
+    candidates = manifest_candidates()
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
 
 
 def manifest_response() -> tuple[int, bytes, list[tuple[bytes, bytes]]]:

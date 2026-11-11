@@ -75,3 +75,49 @@ async def test_well_known_corrupt_is_500_not_404(monkeypatch, tmp_path: Path) ->
 def test_manifest_path_defaults_to_repo_root(monkeypatch) -> None:
     monkeypatch.delenv(server.LINE_MANIFEST_ENV, raising=False)
     assert server.manifest_path() == SOURCE
+
+
+def test_manifest_path_falls_back_to_cwd_when_package_is_installed(monkeypatch, tmp_path):
+    """pip 装的包在 site-packages 时，`__file__` 祖先里没有清单——必须退到 CWD。
+
+    真机实证（2026-11-11）：镜像 pid1 是 console script，`__file__` 落 site-packages，
+    `parents[1]` 不是仓根，于是 /app/line-manifest.json 明明在却回 404。源码运行
+    （`python -m lex_ops_mcp.cli`）验不出这个差异，只有装成包才会。
+    """
+    from lex_ops_mcp import server
+
+    monkeypatch.delenv(server.LINE_MANIFEST_ENV, raising=False)
+    # 模拟"包目录里没有清单、CWD 里有"：
+    fake_pkg = tmp_path / "site-packages" / "lex_ops_mcp"
+    fake_pkg.mkdir(parents=True)
+    monkeypatch.setattr(server, "__file__", str(fake_pkg / "server.py"))
+    cwd = tmp_path / "app"
+    cwd.mkdir()
+    (cwd / "line-manifest.json").write_text('{"schema": "line-manifest/v1", "line": "lex"}')
+    monkeypatch.chdir(cwd)
+
+    assert server.manifest_path() == cwd / "line-manifest.json"
+    assert server.manifest_response()[0] == 200
+
+
+def test_manifest_path_prefers_env_override(monkeypatch, tmp_path):
+    """显式给了 LINE_MANIFEST_PATH 就只认它——配置比搜索链更可信。"""
+    from lex_ops_mcp import server
+
+    target = tmp_path / "explicit.json"
+    target.write_text('{"schema": "line-manifest/v1", "line": "lex"}')
+    monkeypatch.setenv(server.LINE_MANIFEST_ENV, str(target))
+    assert server.manifest_candidates() == [target]
+    assert server.manifest_path() == target
+
+
+def test_missing_manifest_is_404_not_500(monkeypatch, tmp_path):
+    """三个候选全不存在 = 404（配置事实），不许伪装成 5xx 让运维以为服务坏了。"""
+    from lex_ops_mcp import server
+
+    monkeypatch.delenv(server.LINE_MANIFEST_ENV, raising=False)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(server, "__file__", str(tmp_path / "pkg" / "server.py"))
+    status, body, _ = server.manifest_response()
+    assert status == 404
+    assert b"not published" in body
