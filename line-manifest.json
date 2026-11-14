@@ -2,7 +2,7 @@
   "schema": "line-manifest/v1",
   "line": "lex",
   "public_base_url": "https://lex.finddatatech.cloud",
-  "internal_base_url": "http://lex-ops-mcp.fd-prod.svc",
+  "internal_base_url": "http://10.43.138.6",
   "identity": {
     "issuer": "https://auth.finddatatech.cloud/oidc",
     "jwks_uri": "https://auth.finddatatech.cloud/oidc/jwks",
