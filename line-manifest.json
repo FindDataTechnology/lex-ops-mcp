@@ -3,7 +3,6 @@
   "line": "lex",
   "public_base_url": "https://lex.finddatatech.cloud",
   "internal_base_url": "http://lex-ops-mcp.fd-prod.svc",
-  "internal_base_url_note": "平台车道 `/api/lines/lex/proxy/*` 转发到这里（mesh/ClusterIP 形态）。清单随 `/.well-known/line-manifest.json` 对外可见 ⇒ 只许内部地址、禁带凭据；车道把 `/proxy` 之后的路径原样拼上，故调 `/proxy/mcp` 会到 `http://lex-ops-mcp.fd-prod.svc/mcp`。Service 80 → 容器 8000（FastMCP streamable-http，路由 `/mcp`）。",
   "identity": {
     "issuer": "https://auth.finddatatech.cloud/oidc",
     "jwks_uri": "https://auth.finddatatech.cloud/oidc/jwks",

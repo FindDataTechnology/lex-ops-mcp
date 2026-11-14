@@ -18,8 +18,13 @@ import lex_ops_mcp.server as server
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SOURCE = REPO_ROOT / "line-manifest.json"
 
+#: 顶层键的**完整**集合。多一个键就等于把内部信息投影出去，所以这里是精确相等
+#: 而不是子集断言。`internal_base_url` 是 line-manifest/v1 里被 sanction 的可选投影
+#: 字段（converge-line-identity-and-keys 的 `line-manifest` delta：平台网关据此把请求
+#: 与线票送到线的内部上游；因为它随 `/.well-known` 对外可见，所以只许 mesh/ClusterIP
+#: 形态、禁带凭据）。加它不是放宽守卫——新键必须先在 schema delta 里被写下来。
 EXPECTED_TOP_LEVEL = {
-    "schema", "line", "public_base_url", "identity",
+    "schema", "line", "public_base_url", "internal_base_url", "identity",
     "auth_tracks", "scopes", "billing", "surfaces",
 }
 
