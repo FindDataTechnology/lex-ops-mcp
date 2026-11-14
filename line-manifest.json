@@ -19,8 +19,7 @@
       "kind": "customer-key",
       "accepts": "ciyuan-sk",
       "fallback": false,
-      "enforced": true,
-      "note": "词元客户轨**已在线上生效**（2026-11-14 接通并双向实测）：线侧验签点在本线上游 fd-lex 的 `console_api/line_auth.py`（`require_console_or_line`，先 Logto 再门 K），公钥经 `LINE_TOKEN_PUBLIC_KEY_PEM`（Secret `fd-lex-line-token`）注入、issuer 与网关签发值逐字相同。实证据：平台 pod 内铸 `aud=lex` 票 → 本线 `verify_line_token` 通过（subject/email/source/scope/jti 全解析）；跨线票（aud=wire）被拒。**注意**：`verify_line_token()` 只在调用方注入 `jwks_client_factory` 时才走 JWKS 分支，而 `line_auth` 不注入 ⇒ 只配 `LINE_TOKEN_JWKS_URI` 会以 `NOT_CONFIGURED: no verification key source` 静默失效，必须配 PEM。工具面（本服务）仍只把进站 Bearer 原样转发给上游，自身不验签——这条轨的「生效」指的是整条链路可达。"
+      "enforced": true
     }
   ],
   "scopes": [

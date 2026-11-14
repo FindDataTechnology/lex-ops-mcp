@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import httpx
@@ -44,6 +45,50 @@ def test_source_manifest_is_the_projection() -> None:
     assert doc["schema"] == "line-manifest/v1"
     assert set(doc) == EXPECTED_TOP_LEVEL, f"多出/缺少顶层键: {set(doc) ^ EXPECTED_TOP_LEVEL}"
     assert not any(k.startswith("_") for k in doc)
+
+
+def test_source_manifest_has_no_free_text() -> None:
+    """清单的每个字符串都会匿名公开 ⇒ 不许有自由文本说明（`note` 一族）。
+
+    2026-11-15 实测：`auth_tracks[1].note` 有 540 字符，公开载荷里如实包含
+    Secret 名、内部代码路径、`LINE_TOKEN_*` 环境变量名，以及一条静默失效形态
+    ——对外销售的产品线上，这不叫注释，叫侦察指南。证据已移到
+    `docs/line-auth-evidence.md`。
+
+    判据是**键的闭集**而不是长度：一段 20 字的 note 一样能写出 Secret 名。
+    """
+    doc = json.loads(SOURCE.read_text(encoding="utf-8"))
+
+    allowed = {
+        "schema", "line", "public_base_url", "internal_base_url",
+        "identity.issuer", "identity.jwks_uri", "identity.jit_policy",
+        "billing.plane", "billing.evidence_url", "billing.evidence_path",
+        "auth_tracks[].name", "auth_tracks[].kind", "auth_tracks[].accepts",
+        "auth_tracks[].migration_task", "scopes[]",
+    }
+
+    def walk(node, path=""):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                yield from walk(v, f"{path}.{k}" if path else str(k))
+        elif isinstance(node, list):
+            for v in node:
+                yield from walk(v, path + "[]")
+        elif isinstance(node, str):
+            yield path, node
+
+    stray = [p for p, _ in walk(doc) if p not in allowed]
+    assert not stray, f"清单里出现自由文本键（会随投影公开）: {stray}；证据请写进 docs/"
+
+    # 内容侧：即使落在允许的字段里，凭据标识 / 内部地址 / 代码路径也不许出现。
+    body = json.dumps({k: v for k, v in doc.items() if k != "internal_base_url"}, ensure_ascii=False)
+    for pattern, what in (
+        (r"fd-[a-z0-9][a-z0-9-]*-(?:token|key)", "Secret 名"),
+        (r"\b[A-Z][A-Z0-9_]{2,}(?:TOKEN|SECRET|PASSWORD|PEM)\b", "凭据类环境变量"),
+        (r"(?:[\w.-]+/)+[\w.-]+\.(?:py|js|ts|sh|ya?ml)", "内部代码路径"),
+    ):
+        hit = re.search(pattern, body)
+        assert hit is None, f"清单里出现{what}: {hit.group(0)!r}"
 
 
 @pytest.mark.asyncio
