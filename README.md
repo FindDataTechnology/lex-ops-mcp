@@ -1,5 +1,7 @@
 # lex-ops-mcp — 识律线操作 MCP
 
+> **Part of the [Lex line (寻数·识律)](https://www.finddatatech.cloud/products/lex) of [FindData](https://www.finddatatech.cloud)** — AI operation surface for the Lex line: meter audit, metering and line-native key tracks, exposed as agent tools.
+
 识律（lex 线）的操作 MCP（五线 AI 操作面 C4 收官切片）：**线全景导览**（self-describing：
 检索面怎么用、装什么套件）、**账户视图**（身份/用量/账单/配额）、**检索凭据生命周期**
 （列表/铸造/吊销，owner-only）。
