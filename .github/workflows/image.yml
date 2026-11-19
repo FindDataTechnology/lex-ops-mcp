@@ -1,4 +1,4 @@
-# lex-ops-mcp image — hk only (ccr 侧由 cheap-3 tcr-relay 回灌；禁 ccr 直推).
+# lex-ops-mcp image — hk only (the ccr side is backfilled by the tcr-relay service; direct ccr push is disabled).
 name: image
 
 on:
