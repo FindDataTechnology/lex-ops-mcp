@@ -7,11 +7,11 @@ name = "lex-ops-mcp"
 version = "0.1.0"
 description = "识律（lex 线）操作 MCP：账户视图/检索凭据生命周期/线全景导览，上游权威透传（Logto ID token）。"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = "MIT"
 authors = [{ name = "FindDataTechnology" }]
 dependencies = [
-    "fastmcp>=2.0",
+    "fastmcp>=4.2.4,<5",
     "click",
     "uvicorn",
     "httpx",
