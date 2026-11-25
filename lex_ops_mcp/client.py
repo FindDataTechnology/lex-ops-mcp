@@ -1,18 +1,17 @@
-"""lex console HTTP 客户端：Bearer 原样转发 + 诚实错误映射（上游权威）。"""
+"""共享客户端的本仓适配（openspec: enforce-mcp-supply-contract / line-ops-runtime-core）。
+
+公共逻辑（httpx、超时、状态码归类、不可达）在
+`fd_open_data_protocol.line_ops.client`；本模块保留线自己的错误类名 `LexError`
+（工具层与测试按名字捕获它）与上游文案。凭据只经手不落盘。
+"""
 
 from __future__ import annotations
 
-from typing import Any
-
-import httpx
+from fd_open_data_protocol.line_ops.client import LineClient, LineError
 
 
-class LexError(Exception):
-    def __init__(self, kind: str, status: int | None, detail: str):
-        super().__init__(f"[{kind}] {detail}" + (f" (HTTP {status})" if status else ""))
-        self.kind = kind
-        self.status = status
-        self.detail = detail
+class LexError(LineError):
+    """结构化错误：kind + status + 上游 detail 原文（继承共享 LineError，签名不变）。"""
 
 
 MISSING_CREDENTIAL_HINT = (
@@ -21,71 +20,15 @@ MISSING_CREDENTIAL_HINT = (
 )
 
 
-class LexClient:
+class LexClient(LineClient):
+    """Bearer 原样转发；错误类抛 `LexError`，不可达文案用「识律服务」。"""
+
     def __init__(self, base_url: str, timeout_seconds: float = 20.0, transport=None):
-        self._client = httpx.AsyncClient(
-            base_url=base_url, timeout=timeout_seconds, transport=transport
+        super().__init__(
+            base_url,
+            timeout_seconds,
+            transport,
+            error_cls=LexError,
+            service_label="识律",
+            missing_hint=MISSING_CREDENTIAL_HINT,
         )
-
-    async def aclose(self):
-        await self._client.aclose()
-
-    async def request(
-        self,
-        method: str,
-        path: str,
-        *,
-        bearer: str | None,
-        params: dict | None = None,
-        json_body: Any | None = None,
-    ) -> Any:
-        if not bearer:
-            raise LexError("missing_credential", 401, MISSING_CREDENTIAL_HINT)
-        try:
-            res = await self._client.request(
-                method,
-                path,
-                headers={"Authorization": f"Bearer {bearer}"},
-                params=params,
-                json=json_body,
-            )
-        except httpx.HTTPError as e:
-            raise LexError(
-                "unreachable", None, f"识律服务不可达：{type(e).__name__}: {e}"
-            ) from e
-        if res.status_code == 401:
-            raise LexError("unauthorized", 401, _detail(res))
-        if res.status_code == 402:
-            raise LexError("billing", 402, _detail(res))
-        if res.status_code == 403:
-            raise LexError("forbidden", 403, _detail(res))
-        if res.status_code == 404:
-            raise LexError("not_found", 404, _detail(res))
-        if res.status_code == 409:
-            raise LexError("conflict", 409, _detail(res))
-        if res.status_code == 422:
-            raise LexError("invalid", 422, _detail(res))
-        if res.status_code == 429:
-            raise LexError("rate_limited", 429, _detail(res))
-        if res.status_code >= 500:
-            raise LexError("unreachable", res.status_code, f"识律服务错误：{_detail(res)}")
-        if res.status_code >= 400:
-            raise LexError("invalid", res.status_code, _detail(res))
-        if not res.content:
-            return None
-        try:
-            return res.json()
-        except ValueError:
-            return {"_raw": res.text}
-
-
-def _detail(res: httpx.Response) -> str:
-    try:
-        body = res.json()
-        if isinstance(body, dict) and "detail" in body:
-            return str(body["detail"])[:800]
-        if isinstance(body, dict) and "error" in body:
-            return str(body["error"])[:800]
-        return str(body)[:800]
-    except Exception:
-        return (res.text or "")[:800] or f"HTTP {res.status_code}（无 body）"
